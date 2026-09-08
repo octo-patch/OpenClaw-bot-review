@@ -15,7 +15,8 @@ function DailyBoard() {
   const [items, setItems] = useState<DailyItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [speaking, setSpeaking] = useState(false);
-  const [utterance, setUtterance] = useState<SpeechSynthesisUtterance | null>(null);
+  const [requestingSpeech, setRequestingSpeech] = useState(false);
+  const [audio, setAudio] = useState<HTMLAudioElement | null>(null);
 
   useEffect(() => {
     async function fetchDaily() {
@@ -42,15 +43,9 @@ function DailyBoard() {
         .replace('{items}', completedItems.map(i => i.content).join(locale === 'en' ? '. ' : '。'))
     : t('daily.reportEmpty');
 
-  const speak = () => {
+  const speakInBrowser = () => {
     if (!('speechSynthesis' in window)) {
       alert(t('daily.noSpeechSupport'));
-      return;
-    }
-
-    if (speaking && utterance) {
-      window.speechSynthesis.cancel();
-      setSpeaking(false);
       return;
     }
 
@@ -62,8 +57,52 @@ function DailyBoard() {
     u.onend = () => setSpeaking(false);
     u.onerror = () => setSpeaking(false);
 
-    setUtterance(u);
+    window.speechSynthesis.cancel();
     window.speechSynthesis.speak(u);
+  };
+
+  const speak = async () => {
+    if (speaking) {
+      audio?.pause();
+      window.speechSynthesis?.cancel();
+      setAudio(null);
+      setSpeaking(false);
+      return;
+    }
+
+    try {
+      setRequestingSpeech(true);
+      const response = await fetch('/api/speech', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          text: reportText,
+          region: locale === 'en' ? 'global' : 'cn',
+        }),
+      });
+      if (!response.ok) throw new Error('Server speech synthesis is unavailable');
+
+      const url = URL.createObjectURL(await response.blob());
+      const player = new Audio(url);
+      player.onplay = () => setSpeaking(true);
+      player.onended = () => {
+        URL.revokeObjectURL(url);
+        setAudio(null);
+        setSpeaking(false);
+      };
+      player.onerror = () => {
+        URL.revokeObjectURL(url);
+        setAudio(null);
+        setSpeaking(false);
+        speakInBrowser();
+      };
+      setAudio(player);
+      await player.play();
+    } catch {
+      speakInBrowser();
+    } finally {
+      setRequestingSpeech(false);
+    }
   };
 
   const today = new Date().toLocaleDateString(localeToBcp47(locale), {
@@ -83,7 +122,7 @@ function DailyBoard() {
         <div className="flex gap-2">
           <button
             onClick={speak}
-            disabled={loading || items.length === 0}
+            disabled={loading || requestingSpeech || items.length === 0}
             className={`px-4 py-2 rounded-lg font-medium text-sm transition-all flex items-center gap-2 ${
               speaking
                 ? 'bg-red-500 hover:bg-red-600 text-white'
