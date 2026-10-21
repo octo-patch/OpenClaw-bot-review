@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { getKnownProvider, enrichModelMeta } from "../lib/known-providers";
+import { getKnownProvider, enrichModelMeta, getModelPickerModels } from "../lib/known-providers";
 
 describe("getKnownProvider", () => {
   it("returns MiniMax provider metadata for exact match", () => {
@@ -22,12 +22,29 @@ describe("getKnownProvider", () => {
     expect(provider).toBeNull();
   });
 
-  it("includes MiniMax-M3, MiniMax-M2.7, and MiniMax-M2.7-highspeed models", () => {
+  it("orders MiniMax-M3.1-Flash before MiniMax-M3 and retains legacy metadata", () => {
     const provider = getKnownProvider("minimax");
     const ids = provider!.models.map((m) => m.id);
-    expect(ids).toContain("MiniMax-M3");
+    expect(ids.slice(0, 2)).toEqual(["MiniMax-M3.1-Flash", "MiniMax-M3"]);
     expect(ids).toContain("MiniMax-M2.7");
     expect(ids).toContain("MiniMax-M2.7-highspeed");
+  });
+
+  it("MiniMax-M3.1-Flash has current direct API metadata", () => {
+    const provider = getKnownProvider("minimax");
+    const flash = provider!.models.find((m) => m.id === "MiniMax-M3.1-Flash");
+    expect(flash).toBeDefined();
+    expect(flash!.contextWindow).toBe(1000000);
+    expect(flash!.maxTokens).toBe(524288);
+    expect(flash!.reasoning).toBe(true);
+    expect(flash!.input).toEqual(["text", "image", "video"]);
+    expect(flash!.pricingUsdPerMillionTokens).toEqual({
+      input: 0.15,
+      output: 0.6,
+      cacheRead: 0.015,
+      cacheWrite: null,
+    });
+    expect(flash!.thinking).toEqual(["adaptive"]);
   });
 
   it("MiniMax-M3 has 1,000,000-token context, multimodal input, and adaptive/disabled thinking", () => {
@@ -38,17 +55,16 @@ describe("getKnownProvider", () => {
     expect(m3!.reasoning).toBe(true);
     expect(m3!.input).toEqual(["text", "image", "video"]);
     expect(m3!.pricingUsdPerMillionTokens).toEqual({
-      input: 0.6,
-      output: 2.4,
-      cacheRead: 0.12,
+      input: 0.3,
+      output: 1.2,
+      cacheRead: 0.06,
       cacheWrite: null,
     });
     expect(m3!.thinking).toEqual(["adaptive", "disabled"]);
   });
 
   it("MiniMax-M2.7 retains context window, text-only input, and marks reasoning always on", () => {
-    const provider = getKnownProvider("minimax");
-    const m27 = provider!.models.find((m) => m.id === "MiniMax-M2.7");
+    const m27 = enrichModelMeta("minimax", { id: "MiniMax-M2.7" });
     expect(m27).toBeDefined();
     expect(m27!.contextWindow).toBe(204800);
     expect(m27!.maxTokens).toBe(192000);
@@ -64,8 +80,7 @@ describe("getKnownProvider", () => {
   });
 
   it("MiniMax-M2.7-highspeed retains its non-reasoning text-only metadata", () => {
-    const provider = getKnownProvider("minimax");
-    const highspeed = provider!.models.find((m) => m.id === "MiniMax-M2.7-highspeed");
+    const highspeed = enrichModelMeta("minimax", { id: "MiniMax-M2.7-highspeed" });
     expect(highspeed).toBeDefined();
     expect(highspeed!.contextWindow).toBe(204800);
     expect(highspeed!.maxTokens).toBe(192000);
@@ -95,6 +110,42 @@ describe("MiniMax regional endpoints", () => {
   });
 });
 
+describe("MiniMax model picker", () => {
+  it("orders configured Flash then M3 and hides unselected legacy text choices", () => {
+    expect(getModelPickerModels("minimax", [
+      { id: "MiniMax-M2.7" }, { id: "MiniMax-M3" }, { id: "MiniMax-M3.1-Flash" },
+    ]).map((model) => model.id)).toEqual(["MiniMax-M3.1-Flash", "MiniMax-M3"]);
+    expect(getModelPickerModels("minimax", [])).toEqual([]);
+  });
+
+  it("preserves selected legacy, custom, and media model IDs after the ordinary catalog", () => {
+    const models = getModelPickerModels(
+      "minimax",
+      [
+        { id: "MiniMax-M3" },
+        { id: "MiniMax-M3.1-Flash" },
+        { id: "MiniMax-M2.7", name: "Saved legacy" },
+        { id: "custom-text", name: "Saved custom" },
+        { id: "custom-image", name: "Saved image" },
+      ],
+      ["MiniMax-M2.7", "custom-text", "custom-image"],
+    );
+    expect(models.map((model) => model.id)).toEqual([
+      "MiniMax-M3.1-Flash",
+      "MiniMax-M3",
+      "MiniMax-M2.7",
+      "custom-text",
+      "custom-image",
+    ]);
+    expect(models.find((model) => model.id === "custom-image")?.name).toBe("Saved image");
+  });
+
+  it("leaves non-MiniMax catalogs unchanged", () => {
+    const models = [{ id: "provider-model", name: "Provider model" }];
+    expect(getModelPickerModels("openai", models)).toBe(models);
+  });
+});
+
 describe("enrichModelMeta", () => {
   it("fills in missing metadata for known MiniMax-M3 model", () => {
     const model = { id: "MiniMax-M3", name: "MiniMax-M3" };
@@ -103,12 +154,21 @@ describe("enrichModelMeta", () => {
     expect(enriched.reasoning).toBe(true);
     expect(enriched.input).toEqual(["text", "image", "video"]);
     expect(enriched.pricingUsdPerMillionTokens).toEqual({
-      input: 0.6,
-      output: 2.4,
-      cacheRead: 0.12,
+      input: 0.3,
+      output: 1.2,
+      cacheRead: 0.06,
       cacheWrite: null,
     });
     expect(enriched.thinking).toEqual(["adaptive", "disabled"]);
+  });
+
+  it("fills in missing metadata for known MiniMax-M3.1-Flash model", () => {
+    const model = { id: "MiniMax-M3.1-Flash", name: "MiniMax-M3.1-Flash" };
+    const enriched = enrichModelMeta("minimax", model);
+    expect(enriched.contextWindow).toBe(1000000);
+    expect(enriched.maxTokens).toBe(524288);
+    expect(enriched.input).toEqual(["text", "image", "video"]);
+    expect(enriched.thinking).toEqual(["adaptive"]);
   });
 
   it("fills in missing metadata for known MiniMax-M2.7 model", () => {

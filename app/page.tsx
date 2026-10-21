@@ -11,6 +11,7 @@ import {
   type AgentModelTestResult,
   type AgentSessionTestResult,
 } from "./components/agent-card";
+import { getModelPickerModels } from "@/lib/known-providers";
 
 interface Platform {
   name: string;
@@ -583,17 +584,40 @@ export default function Home() {
     if (!p?.id || !p.accessMode) continue;
     providerAccessModeMap[p.id] = p.accessMode;
   }
+  const preservedModelIdsByProvider = new Map<string, Set<string>>();
+  const preserveModelRef = (modelRef: string) => {
+    const slashIndex = modelRef.indexOf("/");
+    if (slashIndex <= 0 || slashIndex >= modelRef.length - 1) return;
+    const providerId = modelRef.slice(0, slashIndex).toLowerCase();
+    const modelId = modelRef.slice(slashIndex + 1);
+    const ids = preservedModelIdsByProvider.get(providerId) || new Set<string>();
+    ids.add(modelId);
+    preservedModelIdsByProvider.set(providerId, ids);
+  };
+  for (const agent of data.agents || []) preserveModelRef(agent.model);
+  preserveModelRef(data.defaults.model);
+  for (const fallback of data.defaults.fallbacks || []) preserveModelRef(fallback);
+
   const modelOptions: AgentModelOptionGroup[] = (data.providers || [])
-    .filter((provider) => provider?.id && Array.isArray(provider.models) && provider.models.length > 0)
-    .map((provider) => ({
-      providerId: provider.id,
-      providerName: provider.id,
-      accessMode: provider.accessMode,
-      models: (provider.models || []).map((model) => ({
-        id: model.id,
-        name: model.name || model.id,
-      })),
-    }));
+    .map<AgentModelOptionGroup | null>((provider) => {
+      if (!provider?.id) return null;
+      const models = getModelPickerModels(
+        provider.id,
+        provider.models || [],
+        preservedModelIdsByProvider.get(provider.id.toLowerCase()),
+      );
+      if (models.length === 0) return null;
+      return {
+        providerId: provider.id,
+        providerName: provider.id,
+        accessMode: provider.accessMode,
+        models: models.map((model) => ({
+          id: model.id,
+          name: model.name || model.id,
+        })),
+      };
+    })
+    .filter((group): group is AgentModelOptionGroup => group !== null);
   return (
     <div className="p-3 md:p-4 max-w-6xl mx-auto">
       {/* 头部 */}

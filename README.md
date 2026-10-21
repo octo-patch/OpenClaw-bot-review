@@ -107,7 +107,7 @@ The dashboard includes built-in metadata for the following LLM providers, enabli
 
 | Provider | Models | API Type | Base URL |
 |----------|--------|----------|----------|
-| **[MiniMax](https://platform.minimax.io)** | `MiniMax-M3`, `MiniMax-M2.7`, `MiniMax-M2.7-highspeed` | OpenAI-compatible (global) / Anthropic-compatible | `https://api.minimax.io/v1` (global), `https://api.minimaxi.com/v1` (CN) |
+| **[MiniMax](https://platform.minimax.io)** | `MiniMax-M3.1-Flash`, `MiniMax-M3` (ordinary picker order); legacy `MiniMax-M2.7` and `MiniMax-M2.7-highspeed` remain supported | OpenAI-compatible (global) / Anthropic-compatible | `https://api.minimax.io/v1` (global), `https://api.minimaxi.com/v1` (CN) |
 
 To use MiniMax with OpenClaw, add the following to your `models.json`:
 
@@ -119,9 +119,8 @@ To use MiniMax with OpenClaw, add the following to your `models.json`:
       "api": "openai-completions",
       "apiKey": "your-minimax-api-key",
       "models": [
-        { "id": "MiniMax-M3", "name": "MiniMax-M3" },
-        { "id": "MiniMax-M2.7", "name": "MiniMax-M2.7" },
-        { "id": "MiniMax-M2.7-highspeed", "name": "MiniMax-M2.7-highspeed" }
+        { "id": "MiniMax-M3.1-Flash", "name": "MiniMax-M3.1-Flash" },
+        { "id": "MiniMax-M3", "name": "MiniMax-M3" }
       ]
     }
   }
@@ -250,9 +249,8 @@ npm run start
       "api": "openai-completions",
       "apiKey": "your-minimax-api-key",
       "models": [
-        { "id": "MiniMax-M3", "name": "MiniMax-M3" },
-        { "id": "MiniMax-M2.7", "name": "MiniMax-M2.7" },
-        { "id": "MiniMax-M2.7-highspeed", "name": "MiniMax-M2.7-highspeed" }
+        { "id": "MiniMax-M3.1-Flash", "name": "MiniMax-M3.1-Flash" },
+        { "id": "MiniMax-M3", "name": "MiniMax-M3" }
       ]
     }
   }

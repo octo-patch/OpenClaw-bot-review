@@ -52,6 +52,13 @@ export interface KnownProviderMeta {
   models: KnownModelMeta[];
 }
 
+export interface ModelPickerEntry {
+  id: string;
+  name?: string;
+}
+
+const MINIMAX_TEXT_CATALOG_IDS = ["MiniMax-M3.1-Flash", "MiniMax-M3"] as const;
+
 const KNOWN_PROVIDERS: Record<string, KnownProviderMeta> = {
   minimax: {
     displayName: "MiniMax",
@@ -74,15 +81,30 @@ const KNOWN_PROVIDERS: Record<string, KnownProviderMeta> = {
     ],
     models: [
       {
+        id: "MiniMax-M3.1-Flash",
+        name: "MiniMax-M3.1-Flash",
+        contextWindow: 1000000,
+        maxTokens: 524288,
+        reasoning: true,
+        input: ["text", "image", "video"],
+        pricingUsdPerMillionTokens: {
+          input: 0.15,
+          output: 0.6,
+          cacheRead: 0.015,
+          cacheWrite: null,
+        },
+        thinking: ["adaptive"],
+      },
+      {
         id: "MiniMax-M3",
         name: "MiniMax-M3",
         contextWindow: 1000000,
         reasoning: true,
         input: ["text", "image", "video"],
         pricingUsdPerMillionTokens: {
-          input: 0.6,
-          output: 2.4,
-          cacheRead: 0.12,
+          input: 0.3,
+          output: 1.2,
+          cacheRead: 0.06,
           cacheWrite: null,
         },
         thinking: ["adaptive", "disabled"],
@@ -123,6 +145,33 @@ export function getKnownProvider(providerId: string): KnownProviderMeta | null {
 }
 
 /**
+ * Build the ordinary model picker catalog while preserving explicitly selected
+ * models that are not part of the current catalog.
+ */
+export function getModelPickerModels(
+  providerId: string,
+  configuredModels: ModelPickerEntry[],
+  preservedModelIds: Iterable<string> = [],
+): ModelPickerEntry[] {
+  if (providerId.toLowerCase() !== "minimax") return configuredModels;
+
+  const preserved = new Set(Array.from(preservedModelIds, (id) => id.toLowerCase()));
+  const currentIds: readonly string[] = MINIMAX_TEXT_CATALOG_IDS.map((id) => id.toLowerCase());
+  // The gateway accepts configured models only. Never inject unconfigured IDs.
+  // Unknown IDs may be custom aliases or media models and remain selectable.
+  return configuredModels
+    .filter((model) => !/^minimax-m(?:1|2)(?:[.-]|$)/i.test(model.id) || preserved.has(model.id.toLowerCase()))
+    .slice()
+    .sort((a, b) => {
+      const rank = (id: string) => {
+        const index = currentIds.indexOf(id.toLowerCase());
+        return index < 0 ? currentIds.length : index;
+      };
+      return rank(a.id) - rank(b.id);
+    });
+}
+
+/**
  * Enrich a model entry with known metadata when fields are missing.
  */
 export function enrichModelMeta(
@@ -138,7 +187,8 @@ export function enrichModelMeta(
     thinking?: string[];
   },
 ): typeof model {
-  const knownProvider = getKnownProvider(providerId);
+  // Keep legacy enrichment available without advertising legacy picker defaults.
+  const knownProvider = KNOWN_PROVIDERS[providerId.toLowerCase()];
   if (!knownProvider) return model;
 
   const knownModel = knownProvider.models.find(
